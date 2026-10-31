@@ -329,6 +329,25 @@ When you start from scratch, the settings grid is almost empty. Use **File > New
 
 <img src="./doc/png/generate1.png" alt="generate" width="700">
 
+### Importing a setupEM config (.simcfg)
+
+**File > Import setupEM Config (.simcfg)...** turns a setupEM settings file into a Palace model. The KLayout plug-in
+[klayout_em_export](https://github.com/volkermuehlhaus-claude/klayout_em_export) writes such a file with each export
+(`<name>.gds`, `<name>.simcfg`), and setupEM saves one with its settings.
+
+- **First import:** a new model from the default Palace template, with the layout file, stackup, top cell, ports and
+  every setting of the .simcfg. setupEM stores frequencies in GHz; the model gets Hz (`fstop` 50 → `50e9`). The
+  model's path is `<name>.py` next to the .simcfg; Save writes it there.
+- **Later imports** of the same .simcfg (a re-export from KLayout) find `<name>.py` and update only its ports, layout
+  file, stackup, top cell and purpose, without asking. Frequencies, mesh, boundaries and your own code stay as you
+  set them in EMStudio. Save to keep the update.
+- Port directions are taken as exported, including their sign (`-Z` stays `-z`).
+
+From the command line, `EMStudio <name>.simcfg` imports at start, and `EMStudio <name>.simcfg -save <model.py>`
+writes the imported model without opening a window (exit code 1 and the log on failure). Palace must be configured
+in Preferences, as for File > New.
+
+
 When a valid model is loaded or created from the template, the main tab will look as shown below. Scripts parameters defined using the `settings[]=value` syntax will be shown in the settings grid and can be modified, with bi-directional synchronization to the built-in Python script editor. Moving the mouse over a setting shows its "flyout help": the description from the keyword files (see below), marked "Required." where the workflow needs the setting and followed by the workflow's default value. A comment of the form `# @brief your text` on the script line replaces the description with your own text for that model; plain comments are not used.
 
 The grid groups the settings by topic (Script control and output files, Input files, Frequencies, Mesh size and accuracy, …), in the order of the workflow's user guide; settings EMStudio doesn't know are listed under **Other**. Settings the workflow requires are shown in **bold**. **+ Add setting...** above the grid (or right-click a topic: *Add setting to <topic>...*) lists the keywords of that topic with their description and default; the new line goes into the script next to the settings of the same topic. Right-click a setting to **Reset to default** or **Remove from model** (not for required settings). The filter field next to the button narrows the grid. Older openEMS models that pass plain variables to the workflow functions can't add settings this way. **File → Convert to Settings Dictionary...** converts such a model to the `settings[...]` form of current models.
