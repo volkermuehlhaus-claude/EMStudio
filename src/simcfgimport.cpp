@@ -32,6 +32,8 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QMenu>
+#include <QMessageBox>
+#include <QPushButton>
 
 namespace {
 
@@ -166,6 +168,7 @@ Data read(const QString &path)
     }
 
     const QJsonObject values = root.value(QStringLiteral("saved_values")).toObject();
+    data.values = values;
     data.gdsFile = jsonString(values.value(QStringLiteral("GdsFile")));
     data.substrateFile = jsonString(values.value(QStringLiteral("SubstrateFile")));
     data.cellname = jsonString(values.value(QStringLiteral("cellname")));
@@ -193,6 +196,43 @@ Data read(const QString &path)
     return data;
 }
 
+/*!*******************************************************************************************************************
+ * \brief The settings of a .simcfg that a new model for \a simKey gets.
+ *
+ * Palace: all of them (\c data.settings; setupEM writes gds2palace settings). OpenEMS: only those that mean the same in
+ * gds2openEMS: unit, purpose, GDS preprocessing and via merging, fill factor correction, fstart and fstop; setupEM's
+ * fstep becomes numfreq. The FEM mesh, solver and boundary settings (refined_cellsize, order, boundary, margin, ...)
+ * mean something else in FDTD or don't exist there: the openEMS template's values stay.
+ *
+ * \param data    Content of the .simcfg.
+ * \param simKey  "palace" or "openems".
+ * \param skipped Optional: receives the keys that are left out.
+ * \return key -> Python literal.
+ **********************************************************************************************************************/
+QVector<QPair<QString, QString>> settingsFor(const Data &data, const QString &simKey, QStringList *skipped)
+{
+    if (simKey != QLatin1String("openems"))
+        return data.settings;
+    static const QStringList shared = {
+        QStringLiteral("unit"), QStringLiteral("purpose"), QStringLiteral("preprocess_gds"),
+        QStringLiteral("merge_polygon_size"), QStringLiteral("fill_factor_correction"),
+        QStringLiteral("fstart"), QStringLiteral("fstop")};
+    QVector<QPair<QString, QString>> out;
+    for (const auto &kv : data.settings) {
+        if (shared.contains(kv.first))
+            out.append(kv);
+        else if (skipped && kv.first != QLatin1String("fstep"))
+            skipped->append(kv.first);
+    }
+    const double fstart = data.values.value(QStringLiteral("fstart")).toDouble(0.0);
+    const QJsonValue fstop = data.values.value(QStringLiteral("fstop"));
+    const double fstep = data.values.value(QStringLiteral("fstep")).toDouble(0.0);
+    if (fstop.isDouble() && fstep > 0.0 && fstop.toDouble() > fstart)
+        out.append({QStringLiteral("numfreq"),
+                    QString::number(qRound((fstop.toDouble() - fstart) / fstep) + 1)});
+    return out;
+}
+
 } // namespace SimcfgImport
 
 /*!*******************************************************************************************************************
@@ -204,7 +244,7 @@ void MainWindow::setupSimcfgImportAction()
         return;
     QAction *a = new QAction(tr("Import setupEM Config (.simcfg)..."), this);
     a->setObjectName(QStringLiteral("actionImportSimcfg"));
-    a->setToolTip(tr("Palace model from a setupEM settings file, e.g. an export of the KLayout plug-in "
+    a->setToolTip(tr("Palace or OpenEMS model from a setupEM settings file, e.g. an export of the KLayout plug-in "
                      "klayout_em_export. If <name>.py exists next to it, only its ports, layout file, stackup, "
                      "top cell and purpose are updated."));
     connect(a, &QAction::triggered, this, [this]() {
@@ -232,20 +272,22 @@ QString MainWindow::simcfgModelPath(const QString &simcfgPath)
 }
 
 /*!*******************************************************************************************************************
- * \brief Imports a setupEM settings file (*.simcfg) as a Palace model.
+ * \brief Imports a setupEM settings file (*.simcfg) as a Palace or OpenEMS model.
  *
- * Without <name>.py next to the file: a new model from the default Palace template, with the files, cell, ports and
- * every setting of the .simcfg (frequencies converted from GHz to Hz). Its path is set to <name>.py, so a later
- * import of the same .simcfg finds it; nothing is saved.
+ * Without <name>.py next to the file: a new model from the default template of \a simKey (asked when empty, see
+ * askSimcfgImportTool), with the files, cell and ports, and the settings that tool shares with setupEM
+ * (SimcfgImport::settingsFor: all for Palace; frequencies converted from GHz to Hz). Its path is set to <name>.py, so
+ * a later import of the same .simcfg finds it; nothing is saved.
  *
  * With <name>.py: that model is loaded and only its ports, layout file, stackup, top cell and purpose are replaced,
  * without asking. Everything else (frequencies, mesh, boundaries, your own code) stays: a re-export from KLayout
  * changes the layout and the ports, while the simulation settings are edited here. Nothing is saved either.
  *
- * \param path Path of the .simcfg file.
+ * \param path   Path of the .simcfg file.
+ * \param simKey "palace" or "openems" for a new model; empty: ask.
  * \return True on success.
  **********************************************************************************************************************/
-bool MainWindow::importSimcfg(const QString &path)
+bool MainWindow::importSimcfg(const QString &path, const QString &simKeyIn)
 {
     const SimcfgImport::Data data = SimcfgImport::read(path);
     if (!data.ok) {
@@ -257,18 +299,23 @@ bool MainWindow::importSimcfg(const QString &path)
 
     const QString modelPath = simcfgModelPath(path);
     const bool update = QFileInfo::exists(modelPath);
+    QString simKey;                             // the new model's tool; an existing model keeps its own
     if (update) {
         if (!loadPythonModel(modelPath))
             return false;
     } else {
-        const int idx = m_ui->cbxSimTool->findData(QStringLiteral("palace"));
+        simKey = simKeyIn.isEmpty() ? askSimcfgImportTool(path) : simKeyIn.toLower();
+        if (simKey.isEmpty())
+            return false;
+        const int idx = m_ui->cbxSimTool->findData(simKey);
         if (idx < 0 || !m_ui->cbxSimTool->isEnabled()) {
-            error(tr("Palace is not configured. Set its path in Setup → Preferences."), false);
+            error(tr("%1 is not configured. Set its path in Setup → Preferences.")
+                      .arg(simKey == QLatin1String("openems") ? tr("OpenEMS") : tr("Palace")), false);
             return false;
         }
         m_ui->cbxSimTool->setCurrentIndex(idx);
-        refreshKeywordTipsForCurrentTool();     // Palace's keyword order places inserted settings; no signal
-                                                // when Palace was already selected
+        refreshKeywordTipsForCurrentTool();     // the tool's keyword order places inserted settings; no signal
+                                                // when the tool was already selected
         clearModelInputs();
         clearSimulationLog(false);
         if (!generateDefaultModelScript(false))
@@ -277,8 +324,9 @@ bool MainWindow::importSimcfg(const QString &path)
         m_simSettings[QStringLiteral("RunPythonScript")] = modelPath;
         reparseEditorIntoGrid();        // the template's settings and where they are written (writeMode)
     }
-    if (data.elmerMode)
-        info(tr("%1 was saved in setupEM's Elmer mode; it is imported as a Palace model.").arg(path), false);
+    if (data.elmerMode && !update)
+        info(tr("%1 was saved in setupEM's Elmer mode; it is imported as a %2 model.")
+                 .arg(path, m_ui->cbxSimTool->currentText()), false);
 
     // Layout file, cell, stackup, then the ports (their layer combos need the GDS layers and stackup names)
     m_simSettings[QStringLiteral("TopCell")] = data.cellname;
@@ -304,10 +352,12 @@ bool MainWindow::importSimcfg(const QString &path)
     appendParsedPortsToTable(ports);
     syncGuiSettingsToPythonEditor();
 
-    // Settings: all of them for a new model, only purpose (belongs to the layout) for an existing one
+    // Settings: for a new model those its tool shares with setupEM's (all for Palace), for an existing one only
+    // purpose (it belongs to the layout)
     QString script = m_ui->editRunPythonScript->toPlainText();
-    QStringList notWritten;
-    for (const auto &kv : data.settings) {
+    QStringList notWritten, skipped;
+    const auto settings = update ? data.settings : SimcfgImport::settingsFor(data, simKey, &skipped);
+    for (const auto &kv : settings) {
         if (update && kv.first != QLatin1String("purpose"))
             continue;
         if (sameSettingValue(kv.first, kv.second))
@@ -330,9 +380,56 @@ bool MainWindow::importSimcfg(const QString &path)
         info(tr("Updated %1 from %2: ports, layout file, stackup, top cell and purpose. Its other settings are "
                 "kept. Save (Ctrl+S) to keep the changes.").arg(modelPath, path), false);
     else
-        info(tr("New Palace model from %1 (%2 ports). Save (Ctrl+S) writes it to %3.")
-                 .arg(path).arg(data.ports.size()).arg(modelPath), false);
+        info(tr("New %1 model from %2 (%3 ports). Save (Ctrl+S) writes it to %4.")
+                 .arg(m_ui->cbxSimTool->currentText(), path).arg(data.ports.size()).arg(modelPath), false);
+    if (!skipped.isEmpty())
+        info(tr("Not taken from the .simcfg (setupEM's Palace settings, which mean something else for %1): %2")
+                 .arg(m_ui->cbxSimTool->currentText(), skipped.join(QStringLiteral(", "))), false);
     return true;
+}
+
+/*!*******************************************************************************************************************
+ * \brief Asks which tool a new model from a .simcfg is for: Palace or OpenEMS, of those configured.
+ *
+ * With only one of them configured, that one is taken without asking. Test builds take m_testSimcfgImportTool
+ * (default palace).
+ *
+ * \param path Path of the .simcfg file, for the question.
+ * \return "palace", "openems", or empty when cancelled or none is configured.
+ **********************************************************************************************************************/
+QString MainWindow::askSimcfgImportTool(const QString &path)
+{
+    QStringList tools;
+    for (const QString &key : {QStringLiteral("palace"), QStringLiteral("openems")})
+        if (m_ui->cbxSimTool->findData(key) >= 0)
+            tools << key;
+    if (tools.isEmpty()) {
+        error(tr("Neither Palace nor OpenEMS is configured. Set one of them in Setup → Preferences."), false);
+        return QString();
+    }
+#ifdef EMSTUDIO_TESTING
+    Q_UNUSED(path);
+    const QString wanted = m_testSimcfgImportTool.isEmpty() ? QStringLiteral("palace") : m_testSimcfgImportTool;
+    return tools.contains(wanted) ? wanted : tools.first();
+#else
+    if (tools.size() == 1)
+        return tools.first();
+    QMessageBox box(QMessageBox::Question, tr("Import setupEM Config"),
+                    tr("Create a new model from %1 for which simulator?\n\n"
+                       "Palace (FEM) gets all settings of the .simcfg. OpenEMS (FDTD) gets the layout, ports and "
+                       "frequencies; its mesh and boundaries start from the OpenEMS template.")
+                        .arg(QFileInfo(path).fileName()),
+                    QMessageBox::Cancel, this);
+    QPushButton *palace = box.addButton(tr("Palace"), QMessageBox::AcceptRole);
+    QPushButton *openems = box.addButton(tr("OpenEMS"), QMessageBox::AcceptRole);
+    box.setDefaultButton(palace);
+    box.exec();
+    if (box.clickedButton() == palace)
+        return QStringLiteral("palace");
+    if (box.clickedButton() == openems)
+        return QStringLiteral("openems");
+    return QString();
+#endif
 }
 
 /*!*******************************************************************************************************************

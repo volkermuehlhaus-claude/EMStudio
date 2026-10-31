@@ -169,7 +169,8 @@ public:
     bool                            loadPythonModel(const QString &fileName);
     void                            runHeadless(const QString& simKeyLower);
     /*! setupEM settings file (*.simcfg) → Palace model, or update of <name>.py next to it (simcfgimport.cpp). */
-    bool                            importSimcfg(const QString &path);
+    bool                            importSimcfg(const QString &path, const QString &simKey = QString());
+    QString                         askSimcfgImportTool(const QString &path);
     static QString                  simcfgModelPath(const QString &simcfgPath);
     bool                            saveModelAs(const QString &path);
     bool                            sameSettingValue(const QString &key, const QString &pyLiteral) const;
@@ -198,6 +199,7 @@ public:
     void                            testSetEditorText(const QString& s);
     void                            refreshSimToolOptionsForTests();
     void                            testSetPreference(const QString& key, const QVariant& value);
+    void                            testSetSimcfgImportTool(const QString& simKey) { m_testSimcfgImportTool = simKey; }
     /*! Runs applyNavigationStyle() and returns the style the Layout preview now uses. */
     NavStyle                        testApplyNavigationStyle();
     QVector<PortInfo>               testParsePortsFromEditor() const;
@@ -836,6 +838,7 @@ private:
     bool                            m_testConvertAccept = true;
     bool                            m_testConvertSwitchImports = false;
     QJsonObject                     m_testLastConversionReport;
+    QString                         m_testSimcfgImportTool;    //!< importSimcfg's answer instead of asking
 #endif
     bool                            m_importingModelGds = false; //!< loadPythonModel is reading the model's GDS
 

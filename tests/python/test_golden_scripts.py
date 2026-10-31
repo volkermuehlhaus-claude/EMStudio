@@ -121,6 +121,21 @@ def test_openems_golden_runs(tmp_path):
     assert only(calls, "openEMS")["EndCriteria"] is not None
 
 
+def test_openems_from_simcfg_golden_runs(tmp_path):
+    # File > Import setupEM Config as an OpenEMS model: the imported ports and frequencies reach gds2openEMS.
+    proc, calls = run_golden(tmp_path, "tst_openems_from_simcfg.py")
+    assert proc.returncode == 0, proc.stderr
+
+    gds = only(calls, "read_gds")
+    assert gds["cellname"] == "t1"
+    assert {201, 202} <= set(gds["layerlist"]), "port layers not read from the GDS"
+    # setupEM's 0..50 GHz in 1 GHz steps became numfreq = 51
+    assert only(calls, "write_snp")["numfreq"] == 51
+    # one excitation per imported port
+    setups = [c["args"] for c in calls if c["call"] == "setupSimulation"]
+    assert [s["excite_portnumbers"] for s in setups] == [[1], [2]]
+
+
 def test_openems_rejects_unknown_init_kwarg(tmp_path):
     """openEMS(**kwargs) must not swallow typos like EndCritera."""
     model = tmp_path / "bad.py"

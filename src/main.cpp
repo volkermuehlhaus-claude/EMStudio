@@ -161,12 +161,13 @@ void printHelp()
     qDebug() << "  -gdsfile <path>       Specify path to GDS file";
     qDebug() << "  -topcell <name>       Specify name of the top cell in the GDS file";
     qDebug() << "  -run                  Run simulation headless (no GUI)";
-    qDebug() << "  -palace               Select Palace backend (with -run)";
-    qDebug() << "  -openems              Select OpenEMS backend (with -run)";
-    qDebug() << "  -save <model.py>      With a .simcfg: write the imported model there and exit (no GUI)";
+    qDebug() << "  -palace               Select Palace backend (with -run; with a .simcfg: new model for Palace)";
+    qDebug() << "  -openems              Select OpenEMS backend (with -run; with a .simcfg: new model for OpenEMS)";
+    qDebug() << "  -save <model.py>      With a .simcfg: write the imported model there and exit (no GUI;";
+    qDebug() << "                        Palace unless -openems is given)";
     qDebug() << "\nArguments:";
     qDebug() << "  model.py              Python model to load (optional, but usually needed)";
-    qDebug() << "  settings.simcfg       setupEM settings to import as a Palace model; if <name>.py exists";
+    qDebug() << "  settings.simcfg       setupEM settings to import as a Palace or OpenEMS model; if <name>.py exists";
     qDebug() << "                        next to it, only its ports, layout file, stackup and cell are updated";
 }
 
@@ -298,7 +299,9 @@ int main(int argc, char *argv[])
         w.setTopCell(topCell);
 
     if (!simcfgFile.isEmpty()) {
-        const bool imported = w.importSimcfg(simcfgFile);
+        // -palace / -openems choose the new model's tool; without them the GUI asks, -save takes Palace
+        const QString tool = !runTool.isEmpty() ? runTool : (convertOnly ? QStringLiteral("palace") : QString());
+        const bool imported = w.importSimcfg(simcfgFile, tool);
         if (convertOnly) {
             const bool saved = imported && w.saveModelAs(savePath);
             if (!saved)

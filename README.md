@@ -331,21 +331,27 @@ When you start from scratch, the settings grid is almost empty. Use **File > New
 
 ### Importing a setupEM config (.simcfg)
 
-**File > Import setupEM Config (.simcfg)...** turns a setupEM settings file into a Palace model. The KLayout plug-in
+**File > Import setupEM Config (.simcfg)...** turns a setupEM settings file into a Palace or OpenEMS model. The KLayout plug-in
 [klayout_em_export](https://github.com/volkermuehlhaus-claude/klayout_em_export) writes such a file with each export
 (`<name>.gds`, `<name>.simcfg`), and setupEM saves one with its settings.
 
-- **First import:** a new model from the default Palace template, with the layout file, stackup, top cell, ports and
-  every setting of the .simcfg. setupEM stores frequencies in GHz; the model gets Hz (`fstop` 50 → `50e9`). The
-  model's path is `<name>.py` next to the .simcfg; Save writes it there.
+- **First import:** EMStudio asks for which simulator (only when both Palace and OpenEMS are configured) and makes a
+  new model from that simulator's default template, with the layout file, stackup, top cell and ports. setupEM
+  stores frequencies in GHz; the model gets Hz (`fstop` 50 → `50e9`). A Palace model gets every setting of the
+  .simcfg. An OpenEMS model gets only those that mean the same in gds2openEMS (unit, purpose, GDS preprocessing, via
+  merging, fill factor correction, `fstart`, `fstop`; setupEM's `fstep` becomes `numfreq`); setupEM's Palace mesh,
+  solver and boundary settings are not taken, the OpenEMS template's values stay. The Log lists what was left out.
+  The model's path is `<name>.py` next to the .simcfg; Save writes it there.
 - **Later imports** of the same .simcfg (a re-export from KLayout) find `<name>.py` and update only its ports, layout
   file, stackup, top cell and purpose, without asking. Frequencies, mesh, boundaries and your own code stay as you
   set them in EMStudio. Save to keep the update.
 - Port directions are taken as exported, including their sign (`-Z` stays `-z`).
 
-From the command line, `EMStudio <name>.simcfg` imports at start, and `EMStudio <name>.simcfg -save <model.py>`
-writes the imported model without opening a window (exit code 1 and the log on failure). Palace must be configured
-in Preferences, as for File > New.
+From the command line, `EMStudio <name>.simcfg` imports at start (add `-palace` or `-openems` to skip the question),
+and `EMStudio <name>.simcfg -save <model.py>` writes the imported model without opening a window (Palace unless
+`-openems` is given; exit code 1 and the log on failure). The simulator must be configured in Preferences, as for
+File > New. Ports with several polygons on one port layer (elements of one port) need gds2palace 0.9.3 or
+gds2openEMS 0.6.7; a via port with `-z` reverses the polarity in OpenEMS since gds2openEMS 0.6.6.
 
 
 When a valid model is loaded or created from the template, the main tab will look as shown below. Scripts parameters defined using the `settings[]=value` syntax will be shown in the settings grid and can be modified, with bi-directional synchronization to the built-in Python script editor. Moving the mouse over a setting shows its "flyout help": the description from the keyword files (see below), marked "Required." where the workflow needs the setting and followed by the workflow's default value. A comment of the form `# @brief your text` on the script line replaces the description with your own text for that model; plain comments are not used.

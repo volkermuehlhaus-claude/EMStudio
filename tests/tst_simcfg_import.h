@@ -19,6 +19,8 @@ private slots:
     void read_rejectsOtherFiles();
     void importNewModel_matchesGolden();
     void importExistingModel_updatesOnlyLayoutAndPorts();
+    void settingsFor_openemsTakesSharedKeysOnly();
+    void importNewOpenemsModel_matchesGolden();
 };
 
 #endif // TST_SIMCFG_IMPORT_H

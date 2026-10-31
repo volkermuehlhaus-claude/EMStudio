@@ -21,6 +21,7 @@
 #ifndef SIMCFGIMPORT_H
 #define SIMCFGIMPORT_H
 
+#include <QJsonObject>
 #include <QJsonValue>
 #include <QPair>
 #include <QString>
@@ -60,11 +61,13 @@ struct Data
     QString                         substrateFile;
     QString                         cellname;
     bool                            elmerMode = false;  //!< saved by setupEM in Elmer mode
-    QVector<QPair<QString, QString>> settings;          //!< key -> Python literal
+    QVector<QPair<QString, QString>> settings;          //!< key -> Python literal (all of them: a Palace model)
+    QJsonObject                     values;             //!< saved_values as read, for settingsFor()
     QVector<Port>                   ports;
 };
 
 Data                                read(const QString &path);
+QVector<QPair<QString, QString>>    settingsFor(const Data &data, const QString &simKey, QStringList *skipped = nullptr);
 QString                             pythonLiteral(const QString &key, const QJsonValue &value);
 
 /*! The .simcfg keys that are not model settings: files and cell, and setupEM's own GUI state. */

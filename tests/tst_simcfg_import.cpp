@@ -84,6 +84,19 @@ void preparePalace(MainWindow &w)
     w.refreshSimToolOptionsForTests();
 }
 
+/*! A MainWindow with OpenEMS selectable too (stub Python), as the OpenEMS golden test sets it up. */
+void prepareOpenems(MainWindow &w)
+{
+#ifdef Q_OS_WIN
+    const QString py = QFINDTESTDATA("tools/openems_python_stub.cmd");
+#else
+    const QString py = QFINDTESTDATA("tools/openems_python_stub.sh");
+    QFile::setPermissions(py, QFile::permissions(py) | QFileDevice::ExeUser);
+#endif
+    w.testSetPreference("Python Path", py);
+    w.refreshSimToolOptionsForTests();
+}
+
 /*! The golden GDS and stackup copied into dir: the .simcfg and the model are written next to them. */
 void copyLineInputs(const QTemporaryDir &dir, QString *gds, QString *xml)
 {
@@ -268,3 +281,75 @@ void SimcfgImportTest::importExistingModel_updatesOnlyLayoutAndPorts()
     QVERIFY(hasSetting(saved, "refined_cellsize", "3  # tuned"));
     QVERIFY(hasSetting(saved, "purpose", "[0, 5]"));
 }
+
+/*!*******************************************************************************************************************
+ * \brief A new OpenEMS model gets only what means the same in gds2openEMS; setupEM's fstep becomes numfreq.
+ **********************************************************************************************************************/
+void SimcfgImportTest::settingsFor_openemsTakesSharedKeysOnly()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("line_em.simcfg");
+    writeJson(path, lineSimcfg("/w/line.gds", "/w/SG13G2_200um.xml"));
+    const SimcfgImport::Data d = SimcfgImport::read(path);
+    QVERIFY2(d.ok, qPrintable(d.error));
+
+    QStringList skipped;
+    const auto s = SimcfgImport::settingsFor(d, "openems", &skipped);
+    QStringList keys;
+    for (const auto &kv : s)
+        keys << kv.first;
+    keys.sort();
+    QCOMPARE(keys, QStringList({"fstart", "fstop", "numfreq", "purpose", "unit"}));
+    for (const auto &kv : s) {
+        if (kv.first == "fstop")
+            QCOMPARE(kv.second, QStringLiteral("50e9"));
+        if (kv.first == "numfreq")
+            QCOMPARE(kv.second, QStringLiteral("51"));     // 0..50 GHz in 1 GHz steps
+    }
+    for (const QString &key : {"refined_cellsize", "order", "margin", "boundary", "fpoint"})
+        QVERIFY2(skipped.contains(key), qPrintable(key));
+    QVERIFY(!skipped.contains("fstep"));                    // used for numfreq, not reported as left out
+
+    QCOMPARE(SimcfgImport::settingsFor(d, "palace").size(), d.settings.size());
+}
+
+/*!*******************************************************************************************************************
+ * \brief A new OpenEMS model (tool from the question's answer): files, cell, ports with their polarity, the shared
+ *        settings; the template's mesh and boundaries stay. Compared with a golden script.
+ **********************************************************************************************************************/
+void SimcfgImportTest::importNewOpenemsModel_matchesGolden()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString gds, xml;
+    copyLineInputs(dir, &gds, &xml);
+    const QString simcfg = dir.filePath("line_em.simcfg");
+    writeJson(simcfg, lineSimcfg(gds, xml));
+
+    MainWindow w;
+    preparePalace(w);
+    prepareOpenems(w);
+    w.testSetSimcfgImportTool("openems");                   // what the user answers when asked
+    QVERIFY(w.importSimcfg(simcfg));
+
+    const QString script = w.testEditorText();
+    QVERIFY2(script.contains("from gds2openEMS import") || script.contains("openEMS"), qPrintable(script));
+    QVERIFY(hasSetting(script, "fstop", "50e9"));
+    QVERIFY(hasSetting(script, "numfreq", "51"));
+    QVERIFY(!hasSetting(script, "refined_cellsize", "1.5"));   // the FEM mesh size is not taken
+    QVERIFY(!script.contains("'order'"));
+    const auto ports = w.testParsePortsFromEditor();
+    QCOMPARE(ports.size(), 2);
+    QCOMPARE(ports[0].direction, QStringLiteral("-z"));
+    QCOMPARE(ports[1].direction, QStringLiteral("z"));
+
+    const QString goldenPath = QFINDTESTDATA("golden/tst_openems_from_simcfg.py");
+    QVERIFY2(!goldenPath.isEmpty(), "golden/tst_openems_from_simcfg.py not found");
+    // updateGoldenOnce(goldenPath, normalize(script));
+    const QString expected = normalize(readUtf8(goldenPath));
+    const QString actual = normalize(script);
+    if (expected != actual)
+        QFAIL(qPrintable(QString("Mismatch vs golden:\n\n%1").arg(diffText(expected, actual))));
+}
+
