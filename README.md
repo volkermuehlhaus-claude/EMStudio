@@ -345,6 +345,13 @@ When you start from scratch, the settings grid is almost empty. Use **File > New
 - **Later imports** of the same .simcfg (a re-export from KLayout) find `<name>.py` and update only its ports, layout
   file, stackup, top cell and purpose, without asking. Frequencies, mesh, boundaries and your own code stay as you
   set them in EMStudio. Save to keep the update.
+- **The stackup comes from the .simcfg** on every import: a stackup chosen on the Substrate tab is replaced by the
+  next re-export. Choose it where the .simcfg is written (e.g. the KLayout plug-in's export dialog). For OpenEMS,
+  that must be an OpenEMS stackup, not a Palace one.
+- **The first import fixes the simulator.** Later imports keep the model's simulator and don't ask. For the other
+  simulator, rename or delete `<name>.py` and import again: a new model from that simulator's template.
+- **The model is found only as `<name>.py` next to the .simcfg.** Saved elsewhere or under another name, the next
+  import makes a new model.
 - Port directions are taken as exported, including their sign (`-Z` stays `-z`).
 
 From the command line, `EMStudio <name>.simcfg` imports at start (add `-palace` or `-openems` to skip the question),
